@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Vitality Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light gray background */
+        }
+        .card {
+            background-color: #ffffff;
+            border-radius: 1rem; /* Rounded corners */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .metric-value {
+            font-size: 2.25rem; /* text-4xl */
+            font-weight: bold;
+            color: #1a202c; /* text-gray-900 */
+        }
+        .metric-label {
+            font-size: 0.875rem; /* text-sm */
+            color: #4a5568; /* text-gray-600 */
+            margin-top: 0.5rem;
+        }
+        .status-indicator {
+            width: 1rem;
+            height: 1rem;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.5rem;
+        }
+        .status-connected {
+            background-color: #48bb78; /* Green */
+        }
+        .status-disconnected {
+            background-color: #f56565; /* Red */
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-4xl font-extrabold text-gray-900 mb-8 text-center">Healtrac</h1>
+
+        <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-md relative mb-6">
+            <strong class="font-bold">MQTT Status: </strong>
+            <span id="mqtt-status" class="font-semibold">Disconnected</span>
+            <span id="status-dot" class="status-indicator status-disconnected"></span>
+        </div>
+
+        <div id="patients-container" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Patient 1 Card -->
+            <div id="patient1-card" class="card">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Patient 1: <span id="patient1-name">Taufiq Hidayat</span></h2>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                    <div>
+                        <div id="patient1-heart-rate" class="metric-value">--</div>
+                        <div class="metric-label">Heart Rate (bpm)</div>
+                    </div>
+                    <div>
+                        <div id="patient1-spo2" class="metric-value">--</div>
+                        <div class="metric-label">SpO2 (%)</div>
+                    </div>
+                    <div>
+                        <div id="patient1-temperature" class="metric-value">--</div>
+                        <div class="metric-label">Temperature (°C)</div>
+                    </div>
+                </div>
+                <p class="text-right text-gray-500 text-xs mt-4">Last Updated: <span id="patient1-timestamp">--</span></p>
+            </div>
+
+            <!-- Patient 2 Card -->
+            <div id="patient2-card" class="card">
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">Patient 2: <span id="patient2-name">Taufiq Hidayat</span></h2>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                    <div>
+                        <div id="patient2-heart-rate" class="metric-value">--</div>
+                        <div class="metric-label">Heart Rate (bpm)</div>
+                    </div>
+                    <div>
+                        <div id="patient2-spo2" class="metric-value">--</div>
+                        <div class="metric-label">SpO2 (%)</div>
+                    </div>
+                    <div>
+                        <div id="patient2-temperature" class="metric-value">--</div>
+                        <div class="metric-label">Temperature (°C)</div>
+                    </div>
+                </div>
+                <p class="text-right text-gray-500 text-xs mt-4">Last Updated: <span id="patient2-timestamp">--</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- mqtt.js CDN -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+    <script>
+        // MQTT Broker settings
+        // Changed to wss:// for secure WebSocket connection and port 8084
+        const BROKER_URL = "wss://broker.emqx.io:8084/mqtt";
+        const TOPIC_BASE = "patient/vital_data/";
+        const INACTIVITY_TIMEOUT_MS = 3000; // 3 seconds
+
+        // Get DOM elements for updating
+        const mqttStatusElement = document.getElementById('mqtt-status');
+        const statusDot = document.getElementById('status-dot');
+
+        const patientElements = {
+            "patient1": {
+                name: document.getElementById('patient1-name'),
+                heartRate: document.getElementById('patient1-heart-rate'),
+                spo2: document.getElementById('patient1-spo2'),
+                temperature: document.getElementById('patient1-temperature'),
+                timestamp: document.getElementById('patient1-timestamp'),
+                lastUpdated: 0 // Track last update time for patient1
+            },
+            "patient2": {
+                name: document.getElementById('patient2-name'),
+                heartRate: document.getElementById('patient2-heart-rate'),
+                spo2: document.getElementById('patient2-spo2'),
+                temperature: document.getElementById('patient2-temperature'),
+                timestamp: document.getElementById('patient2-timestamp'),
+                lastUpdated: 0 // Track last update time for patient2
+            }
+        };
+
+        // Initialize MQTT client
+        const client = mqtt.connect(BROKER_URL);
+
+        // Event listener for successful connection
+        client.on('connect', () => {
+            console.log('Connected to MQTT Broker via WebSocket');
+            mqttStatusElement.textContent = 'Connected';
+            statusDot.classList.remove('status-disconnected');
+            statusDot.classList.add('status-connected');
+
+            // Subscribe to topics for both patients
+            client.subscribe(`${TOPIC_BASE}patient1`, (err) => {
+                if (!err) {
+                    console.log(`Subscribed to ${TOPIC_BASE}patient1`);
+                } else {
+                    console.error(`Failed to subscribe to ${TOPIC_BASE}patient1:`, err);
+                }
+            });
+            client.subscribe(`${TOPIC_BASE}patient2`, (err) => {
+                if (!err) {
+                    console.log(`Subscribed to ${TOPIC_BASE}patient2`);
+                } else {
+                    console.error(`Failed to subscribe to ${TOPIC_BASE}patient2:`, err);
+                }
+            });
+        });
+
+        // Event listener for incoming messages
+        client.on('message', (topic, message) => {
+            try {
+                const data = JSON.parse(message.toString());
+                console.log(`Received message on topic ${topic}:`, data);
+
+                const patientId = data.patient_id;
+                if (patientElements[patientId]) {
+                    const elements = patientElements[patientId];
+
+                    elements.name.textContent = data.patient_name;
+                    elements.heartRate.textContent = data.heart_rate;
+                    elements.spo2.textContent = data.spo2;
+                    elements.temperature.textContent = data.temperature;
+                    elements.timestamp.textContent = new Date(data.timestamp * 1000).toLocaleTimeString(); // Convert Unix timestamp to readable time
+                    elements.lastUpdated = Date.now(); // Update last received time
+                }
+            } catch (e) {
+                console.error("Error parsing message:", e);
+            }
+        });
+
+        // Event listener for errors
+        client.on('error', (err) => {
+            console.error('MQTT Client Error:', err);
+            mqttStatusElement.textContent = 'Error';
+            statusDot.classList.remove('status-connected');
+            statusDot.classList.add('status-disconnected');
+        });
+
+        // Event listener for disconnection
+        client.on('close', () => {
+            console.log('Disconnected from MQTT Broker');
+            mqttStatusElement.textContent = 'Disconnected';
+            statusDot.classList.remove('status-connected');
+            statusDot.classList.add('status-disconnected');
+        });
+
+        client.on('offline', () => {
+            console.log('MQTT Client went offline');
+            mqttStatusElement.textContent = 'Offline';
+            statusDot.classList.remove('status-connected');
+            statusDot.classList.add('status-disconnected');
+        });
+
+        // Check for inactivity every second
+        setInterval(() => {
+            const currentTime = Date.now();
+            for (const patientId in patientElements) {
+                const elements = patientElements[patientId];
+                if (elements.lastUpdated !== 0 && (currentTime - elements.lastUpdated > INACTIVITY_TIMEOUT_MS)) {
+                    console.log(`No data received for ${patientId} for ${INACTIVITY_TIMEOUT_MS / 1000} seconds. Resetting values.`);
+                    elements.heartRate.textContent = '0';
+                    elements.spo2.textContent = '0';
+                    elements.temperature.textContent = '0.0'; // Ensure 0.0 format
+                    elements.timestamp.textContent = 'No Data';
+                    elements.lastUpdated = 0; // Reset to prevent continuous resetting
+                }
+            }
+        }, 1000); // Check every 1 second
+    </script>
+</body>
+</html>
